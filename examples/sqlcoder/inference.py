@@ -1,9 +1,8 @@
-from openai import OpenAI
+import openai
 
-client = OpenAI(
-    base_url="http://192.168.20.44:7861/v1",
-    api_key = "EMPTY"
-)
+
+openai.api_key = "EMPTY"
+openai.api_base = "http://192.168.0.53:7891/v1"
 
 
 SQL_PROMPT = """### Instructions:
@@ -83,7 +82,7 @@ def test():
     for q, s in zip([question1, question2], [database_schema1, database_schema2]):
         prompt = SQL_PROMPT.format(question=q, database_schema=s)
         print(f"Qusestion: \n{q}")
-        response = client.completions.create(
+        response = openai.Completion.create(
             model="sqlcoder",
             prompt=prompt,
             temperature=0,
@@ -93,19 +92,5 @@ def test():
         print(f"SQL: \n{output}\n\n")
 
 
-def run_codeqwen():
-    for q, s in zip([question1, question2], [database_schema1, database_schema2]):
-        prompt = SQL_PROMPT.format(question=q, database_schema=s)
-        print(f"Qusestion: \n{q}")
-        response = client.chat.completions.create(
-            model="codeqwen",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            stop=["```"],
-        )
-        output = response.choices[0].message.content
-        print(f"SQL: \n{output}\n\n")
-
-
 if __name__ == "__main__":
-    run_codeqwen()
+    test()

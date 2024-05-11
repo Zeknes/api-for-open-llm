@@ -1,13 +1,12 @@
 import multiprocessing
 import os
-from pathlib import Path
 from typing import Optional, Dict, List, Union
 
 import dotenv
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from api.utils.compat import jsonify, disable_warnings
+from api.utils.compat import model_json, disable_warnings
 
 dotenv.load_dotenv()
 
@@ -23,19 +22,9 @@ def get_env(key, default):
     return val or default
 
 
-ENGINE = get_env("ENGINE", "default").lower()
-TEI_ENDPOINT = get_env("TEI_ENDPOINT", None)
-TASKS = get_env("TASKS", "llm").lower().split(",")  # llm, rag
-
-STORAGE_LOCAL_PATH = get_env(
-    "STORAGE_LOCAL_PATH",
-    os.path.join(Path(__file__).parents[1], "data", "file_storage")
-)
-os.makedirs(STORAGE_LOCAL_PATH, exist_ok=True)
-
-
-class BaseSettings(BaseModel):
+class Settings(BaseModel):
     """ Settings class. """
+
     host: Optional[str] = Field(
         default=get_env("HOST", "0.0.0.0"),
         description="Listen address.",
@@ -49,16 +38,39 @@ class BaseSettings(BaseModel):
         description="API prefix.",
     )
     engine: Optional[str] = Field(
-        default=ENGINE,
+        default=get_env("ENGINE", "default"),
         description="Choices are ['default', 'vllm', 'llama.cpp', 'tgi'].",
     )
-    tasks: Optional[List[str]] = Field(
-        default=list(TASKS),
-        description="Choices are ['llm', 'rag'].",
+
+    # model related
+    model_name: Optional[str] = Field(
+        default=get_env("MODEL_NAME", None),
+        description="The name of the model to use for generating completions."
     )
+    model_path: Optional[str] = Field(
+        default=get_env("MODEL_PATH", None),
+        description="The path to the model to use for generating completions."
+    )
+    adapter_model_path: Optional[str] = Field(
+        default=get_env("ADAPTER_MODEL_PATH", None),
+        description="Path to a LoRA file to apply to the model."
+    )
+    resize_embeddings: Optional[bool] = Field(
+        default=get_bool_env("RESIZE_EMBEDDINGS"),
+        description="Whether to resize embeddings."
+    )
+    dtype: Optional[str] = Field(
+        default=get_env("DTYPE", "half"),
+        description="Precision dtype."
+    )
+
     # device related
+    device: Optional[str] = Field(
+        default=get_env("DEVICE", "cuda"),
+        description="Device to load the model."
+    )
     device_map: Optional[Union[str, Dict]] = Field(
-        default=get_env("DEVICE_MAP", "auto"),
+        default=get_env("DEVICE_MAP", None),
         description="Device map to load the model."
     )
     gpus: Optional[str] = Field(
@@ -70,37 +82,30 @@ class BaseSettings(BaseModel):
         ge=0,
         description="How many gpus to load the model."
     )
-    activate_inference: Optional[bool] = Field(
-        default=get_bool_env("ACTIVATE_INFERENCE", "true"),
-        description="Whether to activate inference."
-    )
-    model_names: Optional[List] = Field(
-        default_factory=list,
-        description="All available model names"
-    )
-    # support for api key check
-    api_keys: Optional[List[str]] = Field(
-        default=get_env("API_KEYS", "").split(",") if get_env("API_KEYS", "") else None,
-        description="Support for api key check."
-    )
 
-
-class LLMSettings(BaseModel):
-    # model related
-    model_name: Optional[str] = Field(
-        default=get_env("MODEL_NAME", None),
-        description="The name of the model to use for generating completions."
+    # embedding related
+    only_embedding: Optional[bool] = Field(
+        default=get_bool_env("ONLY_EMBEDDING"),
+        description="Whether to launch embedding server only."
     )
-    model_path: Optional[str] = Field(
-        default=get_env("MODEL_PATH", None),
-        description="The path to the model to use for generating completions."
+    embedding_name: Optional[str] = Field(
+        default=get_env("EMBEDDING_NAME", None),
+        description="The path to the model to use for generating embeddings."
     )
-    dtype: Optional[str] = Field(
-        default=get_env("DTYPE", "half"),
-        description="Precision dtype."
+    embedding_size: Optional[int] = Field(
+        default=int(get_env("EMBEDDING_SIZE", -1)),
+        description="The embedding size to use for generating embeddings."
+    )
+    embedding_device: Optional[str] = Field(
+        default=get_env("EMBEDDING_DEVICE", "cuda"),
+        description="Device to load the model."
     )
 
     # quantize related
+    quantize: Optional[int] = Field(
+        default=int(get_env("QUANTIZE", 16)),
+        description="Quantize level for model."
+    )
     load_in_8bit: Optional[bool] = Field(
         default=get_bool_env("LOAD_IN_8BIT"),
         description="Whether to load the model in 8 bit."
@@ -108,6 +113,15 @@ class LLMSettings(BaseModel):
     load_in_4bit: Optional[bool] = Field(
         default=get_bool_env("LOAD_IN_4BIT"),
         description="Whether to load the model in 4 bit."
+    )
+    using_ptuning_v2: Optional[bool] = Field(
+        default=get_bool_env("USING_PTUNING_V2"),
+        description="Whether to load the model using ptuning_v2."
+    )
+    pre_seq_len: Optional[int] = Field(
+        default=int(get_env("PRE_SEQ_LEN", 128)),
+        ge=0,
+        description="PRE_SEQ_LEN for ptuning_v2."
     )
 
     # context related
@@ -130,43 +144,6 @@ class LLMSettings(BaseModel):
         description="Use flash attention."
     )
 
-    # support for transformers.TextIteratorStreamer
-    use_streamer_v2: Optional[bool] = Field(
-        default=get_bool_env("USE_STREAMER_V2", "true"),
-        description="Support for transformers.TextIteratorStreamer."
-    )
-
-    interrupt_requests: Optional[bool] = Field(
-        default=get_bool_env("INTERRUPT_REQUESTS", "true"),
-        description="Whether to interrupt requests when a new request is received.",
-    )
-
-
-class RAGSettings(BaseModel):
-    # embedding related
-    embedding_name: Optional[str] = Field(
-        default=get_env("EMBEDDING_NAME", None),
-        description="The path to the model to use for generating embeddings."
-    )
-    rerank_name: Optional[str] = Field(
-        default=get_env("RERANK_NAME", None),
-        description="The path to the model to use for reranking."
-    )
-    embedding_size: Optional[int] = Field(
-        default=int(get_env("EMBEDDING_SIZE", -1)),
-        description="The embedding size to use for generating embeddings."
-    )
-    embedding_device: Optional[str] = Field(
-        default=get_env("EMBEDDING_DEVICE", "cuda:0"),
-        description="Device to load the model."
-    )
-    rerank_device: Optional[str] = Field(
-        default=get_env("RERANK_DEVICE", "cuda:0"),
-        description="Device to load the model."
-    )
-
-
-class VLLMSetting(BaseModel):
     # vllm related
     trust_remote_code: Optional[bool] = Field(
         default=get_bool_env("TRUST_REMOTE_CODE"),
@@ -199,43 +176,29 @@ class VLLMSetting(BaseModel):
         default=get_env("QUANTIZATION_METHOD", None),
         description="Quantization method for vllm server."
     )
-    enforce_eager: Optional[bool] = Field(
-        default=get_bool_env("ENFORCE_EAGER"),
-        description="Always use eager-mode PyTorch. If False, will use eager mode and CUDA graph in hybrid for maximal performance and flexibility."
-    )
-    max_context_len_to_capture: Optional[int] = Field(
-        default=int(get_env("MAX_CONTEXT_LEN_TO_CAPTURE", 8192)),
-        description="aximum context length covered by CUDA graphs. When a sequence has context length larger than this, we fall back to eager mode."
-    )
-    max_loras: Optional[int] = Field(
-        default=int(get_env("MAX_LORAS", 1)),
-        description="Max number of LoRAs in a single batch."
-    )
-    max_lora_rank: Optional[int] = Field(
-        default=int(get_env("MAX_LORA_RANK", 32)),
-        description="Max LoRA rank."
-    )
-    lora_extra_vocab_size: Optional[int] = Field(
-        default=int(get_env("LORA_EXTRA_VOCAB_SIZE", 256)),
-        description="Maximum size of extra vocabulary that can be present in a LoRA adapter added to the base model vocabulary."
-    )
-    lora_dtype: Optional[str] = Field(
-        default=get_env("LORA_DTYPE", "auto"),
-        description="Data type for LoRA. If auto, will default to base model dtype."
-    )
-    max_cpu_loras: Optional[int] = Field(
-        default=int(get_env("MAX_CPU_LORAS", -1)),
-        ge=-1,
-    )
-    lora_modules: Optional[str] = Field(
-        default=get_env("LORA_MODULES", ""),
-    )
-    vllm_disable_log_stats: Optional[bool] = Field(
-        default=get_bool_env("VLLM_DISABLE_LOG_STATS", "true"),
+
+    # support for transformers.TextIteratorStreamer
+    use_streamer_v2: Optional[bool] = Field(
+        default=get_bool_env("USE_STREAMER_V2", "true"),
+        description="Support for transformers.TextIteratorStreamer."
     )
 
+    # support for api key check
+    api_keys: Optional[List[str]] = Field(
+        default=get_env("API_KEYS", "").split(",") if get_env("API_KEYS", "") else None,
+        description="Support for api key check."
+    )
 
-class LlamaCppSetting(BaseModel):
+    activate_inference: Optional[bool] = Field(
+        default=get_bool_env("ACTIVATE_INFERENCE", "true"),
+        description="Whether to activate inference."
+    )
+    interrupt_requests: Optional[bool] = Field(
+        default=get_bool_env("INTERRUPT_REQUESTS", "true"),
+        description="Whether to interrupt requests when a new request is received.",
+    )
+
+    # support for llama.cpp
     n_gpu_layers: Optional[int] = Field(
         default=int(get_env("N_GPU_LAYERS", 0)),
         ge=-1,
@@ -277,67 +240,29 @@ class LlamaCppSetting(BaseModel):
         description="RoPE frequency scaling factor",
     )
 
-
-class TGISetting(BaseSettings):
     # support for tgi: https://github.com/huggingface/text-generation-inference
     tgi_endpoint: Optional[str] = Field(
         default=get_env("TGI_ENDPOINT", None),
         description="Text Generation Inference Endpoint.",
     )
 
-
-TEXT_SPLITTER_CONFIG = {
-    "ChineseRecursiveTextSplitter": {
-        "source": "huggingface",   # 选择tiktoken则使用openai的方法
-        "tokenizer_name_or_path": get_env("EMBEDDING_NAME", ""),
-    },
-    "SpacyTextSplitter": {
-        "source": "huggingface",
-        "tokenizer_name_or_path": "gpt2",
-    },
-    "RecursiveCharacterTextSplitter": {
-        "source": "tiktoken",
-        "tokenizer_name_or_path": "cl100k_base",
-    },
-    "MarkdownHeaderTextSplitter": {
-        "headers_to_split_on":
-            [
-                ("#", "head1"),
-                ("##", "head2"),
-                ("###", "head3"),
-                ("####", "head4"),
-            ]
-    },
-}
-
-
-PARENT_CLASSES = [BaseSettings]
-
-if "llm" in TASKS:
-    if ENGINE == "default":
-        PARENT_CLASSES.append(LLMSettings)
-    elif ENGINE == "vllm":
-        PARENT_CLASSES.extend([LLMSettings, VLLMSetting])
-    elif ENGINE == "llama.cpp":
-        PARENT_CLASSES.extend([LLMSettings, LlamaCppSetting])
-    elif ENGINE == "tgi":
-        PARENT_CLASSES.extend([LLMSettings, TGISetting])
-
-if "rag" in TASKS:
-    PARENT_CLASSES.append(RAGSettings)
-
-
-class Settings(*PARENT_CLASSES):
-    ...
+    # support for tei: https://github.com/huggingface/text-embeddings-inference
+    tei_endpoint: Optional[str] = Field(
+        default=get_env("TEI_ENDPOINT", None),
+        description="Text Embeddings Inference Endpoint.",
+    )
+    max_concurrent_requests: Optional[int] = Field(
+        default=int(get_env("MAX_CONCURRENT_REQUESTS", 256)),
+        description="The maximum amount of concurrent requests for this particular deployment."
+    )
+    max_client_batch_size: Optional[int] = Field(
+        default=int(get_env("MAX_CLIENT_BATCH_SIZE", 32)),
+        description="Control the maximum number of inputs that a client can send in a single request."
+    )
 
 
 SETTINGS = Settings()
-for name in ["model_name", "embedding_name", "rerank_name"]:
-    if getattr(SETTINGS, name, None):
-        SETTINGS.model_names.append(getattr(SETTINGS, name).split("/")[-1])
-logger.debug(f"SETTINGS: {jsonify(SETTINGS, indent=4)}")
-
-
+logger.debug(f"SETTINGS: {model_json(SETTINGS, indent=4)}")
 if SETTINGS.gpus:
     if len(SETTINGS.gpus.split(",")) < SETTINGS.num_gpus:
         raise ValueError(

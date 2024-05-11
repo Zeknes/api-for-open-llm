@@ -2,20 +2,14 @@ from functools import partial
 from typing import Iterator
 
 import anyio
-from fastapi import (
-    APIRouter,
-    Depends,
-    Request,
-    HTTPException,
-    status,
-)
+from fastapi import APIRouter, Depends, HTTPException, Request
 from loguru import logger
 from sse_starlette import EventSourceResponse
 from starlette.concurrency import run_in_threadpool
 
 from api.core.default import DefaultEngine
-from api.models import LLM_ENGINE
-from api.utils.compat import dictify
+from api.models import GENERATE_ENGINE
+from api.utils.compat import model_dump
 from api.utils.protocol import CompletionCreateParams
 from api.utils.request import (
     handle_request,
@@ -27,14 +21,10 @@ completion_router = APIRouter()
 
 
 def get_engine():
-    yield LLM_ENGINE
+    yield GENERATE_ENGINE
 
 
-@completion_router.post(
-    "/completions",
-    dependencies=[Depends(check_api_key)],
-    status_code=status.HTTP_200_OK,
-)
+@completion_router.post("/completions", dependencies=[Depends(check_api_key)])
 async def create_completion(
     request: CompletionCreateParams,
     raw_request: Request,
@@ -49,7 +39,7 @@ async def create_completion(
     request = await handle_request(request, engine.stop, chat=False)
     request.max_tokens = request.max_tokens or 128
 
-    params = dictify(request, exclude={"prompt"})
+    params = model_dump(request, exclude={"prompt"})
     params.update(dict(prompt_or_messages=request.prompt[0]))
     logger.debug(f"==== request ====\n{params}")
 

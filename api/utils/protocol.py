@@ -1,13 +1,5 @@
 from enum import Enum
-from typing import (
-    Optional,
-    Dict,
-    List,
-    Union,
-    Literal,
-    Any,
-    TypedDict,
-)
+from typing import Optional, Dict, List, Union, Literal, Any
 
 from openai.types.chat import (
     ChatCompletionMessageParam,
@@ -224,18 +216,6 @@ class ChatCompletionCreateParams(BaseModel):
 
     min_p: Optional[float] = 0.0
 
-    include_stop_str_in_output: Optional[bool] = False
-
-    length_penalty: Optional[float] = 1.0
-
-    guided_json: Optional[Union[str, dict, BaseModel]] = None
-
-    guided_regex: Optional[str] = None
-
-    guided_choice: Optional[List[str]] = None
-
-    guided_grammar: Optional[str] = None
-
 
 class CompletionCreateParams(BaseModel):
     model: str
@@ -416,18 +396,6 @@ class CompletionCreateParams(BaseModel):
 
     min_p: Optional[float] = 0.0
 
-    include_stop_str_in_output: Optional[bool] = False
-
-    length_penalty: Optional[float] = 1.0
-
-    guided_json: Optional[Union[str, dict, BaseModel]] = None
-
-    guided_regex: Optional[str] = None
-
-    guided_choice: Optional[List[str]] = None
-
-    guided_grammar: Optional[str] = None
-
 
 class EmbeddingCreateParams(BaseModel):
     input: Union[str, List[str], List[int], List[List[int]]]
@@ -454,12 +422,6 @@ class EmbeddingCreateParams(BaseModel):
     """The format to return the embeddings in.
 
     Can be either `float` or [`base64`](https://pypi.org/project/pybase64/).
-    """
-
-    dimensions: Optional[int] = None
-    """The number of dimensions the resulting output embeddings should have.
-
-    Only supported in `text-embedding-3` and later models.
     """
 
     user: Optional[str] = None
@@ -497,33 +459,3 @@ class CreateEmbeddingResponse(BaseModel):
 
     usage: Usage
     """The usage information for the request."""
-
-
-class RerankRequest(BaseModel):
-    model: str
-    """The name of the model used to rerank."""
-
-    query: str
-    """The query for rerank."""
-
-    documents: List[str]
-    """The documents for rerank."""
-
-    top_n: Optional[int] = None
-
-    return_documents: Optional[bool] = False
-
-
-class Document(TypedDict):
-    text: str
-
-
-class DocumentObj(TypedDict):
-    index: int
-    relevance_score: float
-    document: Optional[Document]
-
-
-class RerankResponse(TypedDict):
-    id: Optional[str]
-    results: List[DocumentObj]

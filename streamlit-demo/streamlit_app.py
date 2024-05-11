@@ -7,15 +7,15 @@ from streamlit_gallery.utils.page import page_group
 
 def main():
     from streamlit_gallery.apps import gallery
-    from streamlit_gallery.components import chat, doc_chat
+    from streamlit_gallery.components import chat, doc_chat, sql_chat, search_chat, tool_chat, code_interpreter
 
     page = page_group("p")
 
     with st.sidebar:
-        st.title("🎉 LLM Gallery")
+        st.title("🎉 Morris's Gallery")
 
         with st.expander("✨ APPS", True):
-            page.item("LLM Chat Gallery", gallery, default=True)
+            page.item("Morris Chat Gallery", gallery, default=True)
 
         with st.expander("🧩 COMPONENTS", True):
 
@@ -24,30 +24,23 @@ def main():
                 page.item("Doc Chat", doc_chat)
 
             if os.getenv("SQL_CHAT_API_BASE", ""):
-                from streamlit_gallery.components import sql_chat
                 page.item("SQL Chat", sql_chat)
 
             if os.getenv("SERPAPI_API_KEY", ""):
-                from streamlit_gallery.components import search_chat
                 page.item("Search Chat", search_chat)
 
             if os.getenv("TOOL_CHAT_API_BASE", ""):
-                from streamlit_gallery.components import tool_chat
                 page.item("Tool Chat", tool_chat)
 
             if os.getenv("INTERPRETER_CHAT_API_BASE", ""):
-                from streamlit_gallery.components import code_interpreter
                 page.item("Code Interpreter", code_interpreter)
 
-        if st.button("🗑️ 清空消息"):
-            st.session_state.messages = []
-
-        with st.expander("🐧 参数配置", False):
-            max_tokens = st.slider("回复最大token数量", 20, 4096, 1024)
-            temperature = st.slider("温度", 0.0, 1.0, 0.9)
-            chunk_size = st.slider("文档分块大小", 100, 512, 250)
-            chunk_overlap = st.slider("文档分块重复大小", 0, 100, 50)
-            top_k = st.slider("文档分块检索数量", 0, 10, 4)
+        with st.expander("🐧 PARAMTERS", False):
+            max_tokens = st.slider("MaxTokens", 20, 4096, 1024)
+            temperature = st.slider("Temperature", 0.0, 1.0, 0.9)
+            chunk_size = st.slider("ChunkSize", 100, 512, 300)
+            chunk_overlap = st.slider("CHUNK_OVERLAP", 0, 100, 10)
+            top_k = st.slider("Top_K", 0, 10, 3)
 
             st.session_state.update(
                 dict(
@@ -59,9 +52,12 @@ def main():
                 )
             )
 
+        if st.button("🗑️ CLEAR MESSAGES"):
+            st.session_state.messages = []
+
     page.show()
 
 
 if __name__ == "__main__":
-    st.set_page_config(page_title="Streamlit LLM Gallery", page_icon="🎈", layout="wide")
+    st.set_page_config(page_title="Streamlit Gallery by Morris", page_icon="🎈", layout="wide")
     main()

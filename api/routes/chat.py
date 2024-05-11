@@ -2,20 +2,14 @@ from functools import partial
 from typing import Iterator
 
 import anyio
-from fastapi import (
-    APIRouter,
-    Depends,
-    Request,
-    HTTPException,
-    status,
-)
+from fastapi import APIRouter, Depends, Request, HTTPException
 from loguru import logger
 from sse_starlette import EventSourceResponse
 from starlette.concurrency import run_in_threadpool
 
 from api.core.default import DefaultEngine
-from api.models import LLM_ENGINE
-from api.utils.compat import dictify
+from api.models import GENERATE_ENGINE
+from api.utils.compat import model_dump
 from api.utils.protocol import ChatCompletionCreateParams, Role
 from api.utils.request import (
     handle_request,
@@ -27,14 +21,10 @@ chat_router = APIRouter(prefix="/chat")
 
 
 def get_engine():
-    yield LLM_ENGINE
+    yield GENERATE_ENGINE
 
 
-@chat_router.post(
-    "/completions",
-    dependencies=[Depends(check_api_key)],
-    status_code=status.HTTP_200_OK,
-)
+@chat_router.post("/completions", dependencies=[Depends(check_api_key)])
 async def create_chat_completion(
     request: ChatCompletionCreateParams,
     raw_request: Request,
@@ -47,7 +37,7 @@ async def create_chat_completion(
     request = await handle_request(request, engine.stop)
     request.max_tokens = request.max_tokens or 1024
 
-    params = dictify(request, exclude={"messages"})
+    params = model_dump(request, exclude={"messages"})
     params.update(dict(prompt_or_messages=request.messages, echo=False))
     logger.debug(f"==== request ====\n{params}")
 

@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from starlette.concurrency import iterate_in_threadpool
 
 from api.config import SETTINGS
-from api.utils.compat import jsonify, dictify
+from api.utils.compat import model_json, model_dump
 from api.utils.constants import ErrorCode
 from api.utils.protocol import (
     ChatCompletionCreateParams,
@@ -53,14 +53,14 @@ async def check_api_key(
 
 
 def create_error_response(code: int, message: str) -> JSONResponse:
-    return JSONResponse(dictify(ErrorResponse(message=message, code=code)), status_code=500)
+    return JSONResponse(model_dump(ErrorResponse(message=message, code=code)), status_code=500)
 
 
 async def handle_request(
     request: Union[CompletionCreateParams, ChatCompletionCreateParams],
     stop: Dict[str, Any] = None,
     chat: bool = True,
-) -> Union[CompletionCreateParams, ChatCompletionCreateParams, JSONResponse]:
+) -> Union[Union[CompletionCreateParams, ChatCompletionCreateParams], JSONResponse]:
     error_check_ret = check_requests(request)
     if error_check_ret is not None:
         return error_check_ret
@@ -76,8 +76,7 @@ async def handle_request(
         request.stop = [request.stop]
 
     if chat and (
-        "qwen" in SETTINGS.model_name.lower()
-        and (request.functions is not None or request.tools is not None)
+        "qwen" in SETTINGS.model_name.lower() and (request.functions is not None or request.tools is not None)
     ):
         request.stop.append("Observation:")
 
@@ -143,7 +142,7 @@ async def get_event_publisher(
             if SETTINGS.engine not in ["vllm", "tgi"]:
                 async for chunk in iterate_in_threadpool(iterator):
                     if isinstance(chunk, BaseModel):
-                        chunk = jsonify(chunk)
+                        chunk = model_json(chunk)
                     elif isinstance(chunk, dict):
                         chunk = json.dumps(chunk, ensure_ascii=False)
 
@@ -157,12 +156,11 @@ async def get_event_publisher(
                         raise anyio.get_cancelled_exc_class()()
             else:
                 async for chunk in iterator:
-                    chunk = jsonify(chunk)
+                    chunk = model_json(chunk)
                     await inner_send_chan.send(dict(data=chunk))
                     if await request.is_disconnected():
                         raise anyio.get_cancelled_exc_class()()
             await inner_send_chan.send(dict(data="[DONE]"))
-
         except anyio.get_cancelled_exc_class() as e:
             logger.info("disconnected")
             with anyio.move_on_after(1, shield=True):

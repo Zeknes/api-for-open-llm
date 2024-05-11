@@ -1,42 +1,46 @@
 import os
 
-import pandas as pd
 import streamlit as st
-from langchain_community.utilities.sql_database import SQLDatabase
+from openai import OpenAI
 
-from .utils import create_sql_query, create_llm_chain
+from .utils import query_table_names, query_table_schema, query_mysql_db, SQL_PROMPT
 
 
 def main():
     st.title("💬 SQL Chatbot")
 
-    base_url = os.getenv("SQL_CHAT_API_BASE")
-    col1, col2 = st.columns(2)
+    client = OpenAI(
+        api_key=os.getenv("API_KEY"),
+        base_url=os.getenv("SQL_CHAT_API_BASE"),
+    )
 
-    with col1:
-        with st.expander(label="✨ 简介"):
-            st.markdown("""+ SQL问答流程：
+    with st.expander("🐬 DATABASE SETTINGS", False):
+        col1, col2 = st.columns(2)
+        with col1:
+            db_host = st.text_input("Host", placeholder="192.168.0.121")
+            db_user = st.text_input("User", value="root")
+            db_name = st.text_input("Database Name", placeholder="test2")
+        with col2:
+            db_port = st.number_input("Port", value=3306)
+            db_password = st.text_input("Password", type="password")
 
-    + 基于用户问题和选定表结构生成可执行的 sql 语句
+        db_creds = dict(
+            host=db_host,
+            port=db_port,
+            user=db_user,
+            password=db_password,
+        )
 
-    + 执行 sql 语句，返回数据库查询结果
-    
-    + [TODO] 通过 schema link 自动寻找相关的表
+        if db_name and db_creds:
+            with col2:
+                table_names = query_table_names(db_name, db_creds)
+                table_name = st.selectbox("Select a table", table_names)
+            st.session_state.update(dict(table_name=table_name))
 
-    + [TODO] 根据查询结果对用户问题进行回复""")
+            table_info = query_table_schema(table_name, db_name, db_creds)
+            st.session_state.update(dict(table_info=table_info))
 
-    with col2:
-        with st.expander("🐬 数据库配置", False):
-            db_url = st.text_input("URL", placeholder="mysql+pymysql://")
-            if db_url:
-                try:
-                    db = SQLDatabase.from_uri(database_uri=db_url)
-                    table_names = db.get_usable_table_names()
-                except:
-                    table_names = []
-                    st.error("Wrong configuration for database connection!")
-
-                include_tables = st.multiselect("选择查询表", table_names)
+        st.session_state.update(dict(db_creds=db_creds, db_name=db_name))
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -46,49 +50,53 @@ def main():
             if message["role"] == "user":
                 st.markdown(message["content"])
             else:
-                st.markdown(message["content"])
-                st.markdown("### SQL Query")
-                if message["sql"] is not None:
-                    st.code(message["sql"], language="sql")
-                if message["data"] is not None:
-                    with st.expander("展示查询结果"):
-                        st.dataframe(message["data"], use_container_width=True)
+                st.code(message["content"])
+                if message["result"] is not None:
+                    st.dataframe(message["result"])
 
-    if query := st.chat_input("2022年xx大学参与了哪些项目？"):
-        st.session_state.messages.append({"role": "user", "content": query})
+    if prompt := st.chat_input("2022年xx大学参与了哪些项目？"):
+        table_name = st.session_state.get("table_name", None)
+        sql_prompt = None
+        if table_name:
+            sql_prompt = SQL_PROMPT.format(query=prompt, table_info=st.session_state.get("table_info", ""))
+
+        st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
-            st.markdown(query)
+            st.markdown(prompt)
 
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
             full_response = ""
 
-            sql_query, sql_result = create_sql_query(query, base_url, db_url, include_tables)
-            data = pd.DataFrame(sql_result) if sql_result else None
-            str_data = data.to_markdown() if data is not None else ""
-
-            llm_chain = create_llm_chain(base_url)
-            for chunk in llm_chain.stream(
-                {"question": query, "query": sql_query, "result": str_data}
+            for response in client.completions.create(
+                model="sqlcoder",
+                prompt=sql_prompt or prompt,
+                stream=True,
+                temperature=0.0,
+                stop=["```"],
             ):
-                full_response += chunk or ""
-                message_placeholder.markdown(full_response + "▌")
+                full_response += response.choices[0].text or ""
+                message_placeholder.code(full_response + "▌", language="sql")
 
-            message_placeholder.markdown(full_response)
-            if sql_query:
-                st.markdown("### SQL Query")
-                st.code(sql_query, language="sql")
+            message_placeholder.code(full_response, language="sql")
+            try:
+                result = query_mysql_db(
+                    full_response,
+                    db_name=st.session_state.get("db_name"),
+                    db_creds=st.session_state.get("db_creds"),
+                )
+            except:
+                result = None
 
-            if data is not None:
-                with st.expander("展示查询结果"):
-                    st.dataframe(data, use_container_width=True)
+            if result is not None:
+                result = result.head(5)
+                st.dataframe(result)
 
         st.session_state.messages.append(
             {
                 "role": "assistant",
                 "content": full_response,
-                "sql": sql_query,
-                "data": data,
+                "result": result,
             }
         )
 
